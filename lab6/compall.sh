@@ -1,0 +1,9 @@
+javac Figure.java
+javac Figures.java
+javac Figures2.java
+javac Rectangle.java
+javac Square.java
+javac MutableSquare.java
+javac Ellipse.java
+javac Circle.java
+javac MutableCircle.java
