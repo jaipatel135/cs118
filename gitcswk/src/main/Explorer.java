@@ -117,13 +117,14 @@ public class Explorer implements IRobotController {
   //for traversing explored tiles in a maze until we reach unexplored tiles.
   public void backtrackControl(int exits){
     if(exits > 2){
-      int dir = searchJunction(robot.getLocation().x,robot.getLocation().y);
+      int dir = robotData.searchJunction(robot.getLocation().x,robot.getLocation().y);
       if(dir >=1002){
         dir = dir-2;
       }else{
         dir = dir+2;
       }
     }
+    move(corridor());
   }
 
   // this method causes the robot to face to the absolute
