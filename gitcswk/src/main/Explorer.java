@@ -1,6 +1,24 @@
 import uk.ac.warwick.dcs.maze.logic.*;
 import java.awt.Point;
 
+/*
+1000 NORTH
+1001 EAST
+1002 SOUTH
+1003 WEST
+
+2000 AHEAD
+2001 RIGHT
+2002 BEHIND
+2003 LEFT
+
+3000 WALL
+3001 PASSAGE
+4000 BEENBEFORE
+
+numeric directions for arithmetic on them.
+*/
+
 public class Explorer implements IRobotController {
   // the robot in the maze
   private IRobot robot;
@@ -9,36 +27,132 @@ public class Explorer implements IRobotController {
   // a value (in ms) indicating how long we should wait
   // between moves
   private int delay;
-
+  //RobotData object for tracking junctions.
   private RobotData robotData;
+  //1 = explore, 0 = backtrack
+  private int explorerMode;
 
   // this method is called when the "start" button is clicked
   // in the user interface
   public void start() {
+    //onetime setup
     this.active = true;
+    int direction;
+    //the explorerMode is set once at the start of every run instead
+    //of in the reset function.
+    explorerMode = 1;
+    //if this is the robots first run then a new RobotData object is
+    //created to store data on the maze.
     if(this.robot.getRuns() == 0){
-      this.robotData = new RobotData();
+      this.robotData = new RobotData(robot);
     }
+    move(randomNonWall());
+
+    //run loop for moving
     while(!robot.getLocation().equals(robot.getTargetLocation()) && active) {
       int exits = this.nonwallExits();
-      int direction = IRobot.AHEAD;
-      testPosition();
-      if(exits == 1){
-        direction = deadEnd();
-      }else if(exits == 2){
-        direction = corridor();
-      }else if(exits == 3){
-        direction = junction();
-      }else if(exits == 4){
-        direction = crossroads();
+      if(passageExits() >=1){
+        explorerMode = 1;
+      }else{
+        explorerMode = 0;
       }
-      robot.face(direction);
-      robot.advance();
+      if(explorerMode == 1){
+        System.out.println("Exploring");
+        robot.sleep(delay);
+        exploreControl(exits);
+      }else{
+        System.out.println("backtracking");
+        robot.sleep(delay);
+        backtrackControl(exits);
+      }
       // wait for a while if we are supposed to
+      if (delay > 0)
+      robot.sleep(1500);
+    }
+    //prints all junctions it knows about
+    printAllData();
+  }
+
+/*
+  public void start(){
+    this.active = true;
+    int direction;
+    //the explorerMode is set once at the start of every run instead
+    //of in the reset function.
+    explorerMode = 1;
+    //if this is the robots first run then a new RobotData object is
+    //created to store data on the maze.
+    if(this.robot.getRuns() == 0){
+      this.robotData = new RobotData(robot);
+    }
+
+    while(!robot.getLocation().equals(robot.getTargetLocation()) && active) {
+      for(int i=0;i<4;i++){
+        faceHeading(IRobot.NORTH+i);
+        robot.sleep(delay);
+      }
       if (delay > 0)
       robot.sleep(delay);
     }
   }
+*/
+  //for exploring new tiles in the maze.
+  public void exploreControl(int exits){
+    if(exits == 2){
+      move(corridor());
+    }else if(exits == 3){
+      testPosition();
+      move(junction());
+    }else if(exits == 4){
+      testPosition();
+      move(crossroads());
+    }
+  }
+
+  private void move(int direction){
+    robot.face(direction);
+    robot.advance();
+  }
+
+  //for traversing explored tiles in a maze until we reach unexplored tiles.
+  public void backtrackControl(int exits){
+    if(exits > 2){
+      int dir = searchJunction(robot.getLocation().x,robot.getLocation().y);
+      if(dir >=1002){
+        dir = dir-2;
+      }else{
+        dir = dir+2;
+      }
+    }
+  }
+
+  // this method causes the robot to face to the absolute
+  // direction that is specified as argument and returns
+  // what sort of square there is
+  public void faceHeading(int absoluteDirection) {
+      //get the current absolute heading of the robot
+      int previousHeading = robot.getHeading();
+      //checks if absolute direction is a valid value
+      if(absoluteDirection >= 1000 && absoluteDirection <=1003){
+          if(previousHeading < absoluteDirection){
+            /*returns the object that is in the absolute position given
+            if the absoluteDirection value is larger than the previousHeading value*/
+            int diff = absoluteDirection - previousHeading;
+            robot.face(IRobot.AHEAD+diff);
+          }else if(previousHeading > absoluteDirection){
+            /*returns the object that is in the absolute position given
+            if the absoluteDirection is smaller than the previousHeading value*/
+            int diff = previousHeading - absoluteDirection;
+            robot.face(2004-diff);
+          }else{
+            //if the values match then the robot can look ahead
+            robot.face(robot.AHEAD);
+          }
+      }else{
+        //if the value of absoluteDirection is not a NORTH EAST SOUTH WEST value then return 0
+      }
+  }
+
 
   // returns a number indicating how many non-wall exits there
   // are surrounding the robot's current position
@@ -73,25 +187,16 @@ public class Explorer implements IRobotController {
   }
 
   private void testPosition(){
-    robotData.addTile(robot);
+    if(beenBeforeExits() == 1){
+      robotData.addJunction();
+    }
   }
-  /*
-  1000 NORTH
-  1001 EAST
-  1002 SOUTH
-  1003 WEST
 
-  2000 AHEAD
-  2001 RIGHT
-  2002 BEHIND
-  2003 LEFT
+  private void printAllData(){
+    robotData.printAllJunctions();
+  }
 
-  3000 WALL
-  3001 PASSAGE
-  4000 BEENBEFORE
-
-  numeric directions for arithmetic on them.
-  */
+  //returns an random direction with minimal bias.
   public int randomDirection(){
     int direction;
     int randno = (int) Math.round(Math.random()*4);
@@ -107,6 +212,7 @@ public class Explorer implements IRobotController {
     return direction;
   }
 
+  //returns a random direction that will not be a wall.
   public int randomNonWall(){
     int direction = randomDirection();
     while(robot.look(direction) == IRobot.WALL){
@@ -115,6 +221,7 @@ public class Explorer implements IRobotController {
     return direction;
   }
 
+  //returns a random direction out of 2 possible directions.
   public int randomDirection(int directionOne, int directionTwo){
     if (Math.random()<=0.4999f){
       return directionOne;
@@ -123,6 +230,7 @@ public class Explorer implements IRobotController {
     }
   }
 
+  //returns a random direction out of 3 possible directions.
   public int randomDirection(int directionOne, int directionTwo, int directionThree){
     int randno = (int) Math.round(Math.random()*3);
     if(randno == 1){
@@ -134,6 +242,7 @@ public class Explorer implements IRobotController {
     }
   }
 
+  //returns the valid direction when the robot hits a dead end.
   public int deadEnd(){
     if(robot.look(IRobot.BEHIND) != IRobot.WALL){
       return IRobot.BEHIND;
@@ -142,18 +251,13 @@ public class Explorer implements IRobotController {
     }
   }
 
+  //returns a valid direction when a corridor is encountered.
   public int corridor(){
     int direction = IRobot.AHEAD;
-    int possibleDirectionOne = 1;
-    int possibleDirectionTwo;
     for(int i=0;i<4;i++){
       if(robot.look(direction) != IRobot.WALL){
-        if(robot.look(direction) == IRobot.PASSAGE){return direction;}
-        if(possibleDirectionOne == 1){
-          possibleDirectionOne = direction;
-        }else{
-          possibleDirectionTwo = direction;
-          return randomDirection(possibleDirectionOne,possibleDirectionTwo);
+        if(direction != IRobot.BEHIND){
+          return direction;
         }
       }
       direction++;
@@ -161,6 +265,7 @@ public class Explorer implements IRobotController {
     return 0;
   }
 
+  //returns a valid direction when a junction is encountered.
   public int junction(){
     int direction = IRobot.AHEAD;
     int lastDirection = 1;
@@ -189,6 +294,7 @@ public class Explorer implements IRobotController {
     return 0;
   }
 
+  //returns a valid direction when a crossroads is encountered.
   public int crossroads(){
     int direction = IRobot.AHEAD;
     int firstDirection = 1;
@@ -229,7 +335,7 @@ public class Explorer implements IRobotController {
     return 0;
   }
 
-  // this method returns a description of this controller
+  // this method returns a description of this controller.
   public String getDescription() {
     return "A controller which explores the maze in a structured way";
   }
@@ -257,40 +363,89 @@ public class Explorer implements IRobotController {
 
 }
 
-private class RobotData{
-  private static int maxJunctions = 10000;
+class RobotData{
+  public static int maxJunctions = 10000;
   private static int junctionCounter;
-  private DynamicDataArray tiles[];
+  private DynamicDataArray tiles;
+  private IRobot robot;
 
-  public void RobotData(){
+  public RobotData(IRobot robot){
     resetJunctionCounter();
     tiles = new DynamicDataArray(1);
-    addTile();
+    this.robot = robot;
   }
 
-  public void addTile(robot robot){
-    TileData thisTile = new TileData();
+  public void addJunction(){
+    JunctionData thisTile = new JunctionData(robot);
     tiles.add(thisTile);
+    junctionCounter++;
+  }
+
+  //takes robots x,y and returns robots heading when it first encountered a
+  //junction.
+  public int searchJunction(int x, int y){
+    for(int i=0;i<junctionCounter;i++){
+      JunctionData tile = tiles.get(i);
+      if(tile.getX() == x && tile.getY() == y){
+        return tile.getArrivedDirection();
+      }
+    }
+    tiles.add(new JunctionData(robot));
+    return tiles.get(junctionCounter).getArrivedDirection();
+  }
+
+  public DynamicDataArray getData(){
+    return tiles;
   }
 
   public void resetJunctionCounter(){
     junctionCounter = 0;
   }
+
+  public JunctionData pop(){
+    return tiles.pop();
+  }
+
+  public void printJunction(int index){
+    JunctionData t = tiles.get(index);
+    int x = t.getX();
+    int y = t.getY();
+    int arrivedDirection = t.getArrivedDirection();
+    String dir;
+    if(arrivedDirection == 1000){
+      dir = "NORTH";
+    }else if(arrivedDirection == 1001){
+      dir = "EAST";
+    }else if(arrivedDirection == 1002){
+      dir = "SOUTH";
+    }else if(arrivedDirection == 1003){
+      dir = "WEST";
+    }else{
+      dir = "invalid";
+    }
+    System.out.println("Junction " + index + "(x=" + x + ",y=" + y + ") heading " + dir);
+  }
+
+  public void printAllJunctions(){
+    for(int i=0;i<junctionCounter;i++){
+      printJunction(i);
+    }
+  }
 }
 
-private class DynamicDataArray{
-  private TileData[] array;
-  private TileData[] newArray;
+class DynamicDataArray{
+  private JunctionData[] array;
+  private JunctionData[] newArray;
   private int capacity;
   private int nextFree;
 
   public DynamicDataArray(int initialCapacity){
-    array = new TileData[initialCapacity];
+    array = new JunctionData[initialCapacity];
     capacity = initialCapacity;
     nextFree = 0;
   }
 
-  public getSize(){
+  public int getSize(){
     int size=0;
     for(int i=0;i<capacity;i++){
       if(array[i] != null){
@@ -305,7 +460,7 @@ private class DynamicDataArray{
   }
 
   private void resize() {
-    newArray = new TileData[capacity+1];
+    newArray = new JunctionData[capacity+1];
     for(int i=0;i<capacity;i++){
       newArray[i] = array[i];
     }
@@ -313,38 +468,50 @@ private class DynamicDataArray{
     capacity= capacity+1;
   }
 
-  public void add(TileData tileData){
+  public void add(JunctionData JunctionData){
     if(nextFree >= capacity-1){
       this.resize();
     }
-    array[nextFree] = tileData;
+    array[nextFree] = JunctionData;
     nextFree++;
   }
 
-  public TileData get(int index){
+  public JunctionData get(int index){
     return array[index];
+  }
+
+  public JunctionData pop(){
+    nextFree--;
+    return array[nextFree];
   }
 }
 
-
-private class TileData{
+class JunctionData{
   private int x;
   private int y;
   private int arrivedDirection;
   private int walls;
   private int passagesLeft;
-  private
 
-  public void TileData(){
-    setData();
+  public JunctionData(IRobot robot){
+    setData(robot);
   }
 
-  private setData(){
+  private void setData(IRobot robot){
     x = robot.getLocation().x;
     y = robot.getLocation().y;
     arrivedDirection = robot.getHeading();
-    exits = nonwallExits();
-    passagesLeft = passageExits()-1;
+    passagesLeft = setPassagesLeft(robot);
+  }
+
+  private int setPassagesLeft(IRobot robot){
+    int direction = IRobot.AHEAD;
+    int exits = 0;
+    for(int i=0;i<4;i++){
+      if(robot.look(direction) == IRobot.PASSAGE){exits++;}
+      direction++;
+    }
+    return exits;
   }
 
   public int getX(){
@@ -359,11 +526,7 @@ private class TileData{
     return arrivedDirection;
   }
 
-  public int getExits(){
-    return exits;
-  }
-
-  public int passagesLeft(){
+  public int getPassagesLeft(){
     return passagesLeft;
   }
 }
